@@ -3,4 +3,8 @@ name = "koerier"
 version = "0.1.0"
 edition = "2024"
 
+[[bin]]
+name = "koerier"
+path = "src/koerier.rs"
+
 [dependencies]
