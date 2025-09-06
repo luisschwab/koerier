@@ -41,7 +41,7 @@ koerier -c config.toml
 [2025-09-06T02:49:15Z INFO  koerier] koerier is bound and listening at 0.0.0.0:1337
 ```
 
-Optionally, use the example `systemd` service provided here:
+Optionally, use the example [`systemd`](./koerier.service.example) service provided here:
 ```shell
 cp koerier.service.example /etc/systemd/system/koerier.service
 systemctl daemon-reload
