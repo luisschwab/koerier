@@ -7,6 +7,7 @@ use axum::{
     routing::get,
 };
 use base64::{Engine as _, engine::general_purpose};
+use clap::Parser;
 use image::ImageFormat;
 use log::{debug, error, info};
 use serde::{Deserialize, Serialize};
@@ -22,6 +23,19 @@ mod lnd;
 
 pub(crate) const ENDPOINT_LNURLP: &str = "/.well-known/lnurlp/{user}";
 pub(crate) const ENDPOINT_CALLBACK: &str = "/lnurlp/callback";
+
+/// TOML configuration file path CLI argument.
+#[derive(Parser)]
+#[command(name = "koerier")]
+#[command(about = "A lightning address server for LND")]
+pub(crate) struct Cli {
+    #[arg(
+        short = 'c',
+        long = "config",
+        help = "The path to the TOML configuration file"
+    )]
+    pub(crate) config: String,
+}
 
 /// Koerier configuration parameters.
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -225,37 +239,37 @@ async fn fetch_invoice(
 }
 
 /// Read configuration params from `koerier.toml`.
-fn parse_config() -> (Koerier, Lnd) {
-    let config_str = match fs::read_to_string("koerier.toml") {
+fn parse_config(config_path: String) -> (Koerier, Lnd) {
+    let config_str = match fs::read_to_string(&config_path) {
         Ok(config_str) => config_str,
         Err(_) => {
-            error!("Failed to open `koerier.toml`. Does the file exist?");
+            error!("Failed to open `{config_path}`. Does the file exist?");
             process::exit(1);
         }
     };
     let config: toml::Value = match toml::from_str(&config_str) {
         Ok(config) => config,
         Err(e) => {
-            error!("Failed to parse TOML from `koerier.toml: {e}");
+            error!("Failed to parse TOML from `{config_path}`: {e}");
             process::exit(1);
         }
     };
     let koerier: Koerier = match config["koerier"].clone().try_into() {
         Ok(koerier) => koerier,
         Err(e) => {
-            error!("Failed to parse `[koerier]` section from `koerier.toml: {e}");
+            error!("Failed to parse `[koerier]` section from `{config_path}`: {e}");
             process::exit(1);
         }
     };
     let lnd: Lnd = match config["lnd"].clone().try_into() {
         Ok(lnd) => lnd,
         Err(e) => {
-            error!("Failed to parse `[lnd]` section from `koerier.toml: {e}");
+            error!("Failed to parse `[lnd]` section from `{config_path}`: {e}");
             process::exit(1);
         }
     };
 
-    info!("Successfully parsed configuration from `koerier.toml`");
+    info!("Successfully parsed configuration from `{config_path}`");
 
     debug!("");
     debug!("[kourier]");
@@ -282,7 +296,9 @@ async fn main() {
         .parse_default_env()
         .init();
 
-    let (koerier, lnd) = parse_config();
+    let args = Cli::parse();
+
+    let (koerier, lnd) = parse_config(args.config);
 
     let state = Arc::new(AxumState {
         koerier: koerier.clone(),
