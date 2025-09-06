@@ -192,7 +192,8 @@ async fn fetch_invoice(
         }
     };
 
-    // Check that the requested invoice amount respects the boundaries set by `minSendable` and `maxSendable`.
+    // Check that the requested invoice amount respects the boundaries set by `minSendable` and
+    // `maxSendable`.
     let amount = params.amount;
     // Convert boundaries from milli-satoshi to satoshi.
     let min_amount = state.lnd.min_invoice_amount * 1000;
