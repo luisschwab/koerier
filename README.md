@@ -21,8 +21,8 @@ Create a TOML file with these fields:
 ```toml
 [koerier]
 domain = "https://example.org" # the domain used on the callback URL
-bind_address = "0.0.0.0:1337" # the address koerier will listen on
-description = "How much a dollar really cost?" # description that will be displayed when the LNURL endpoint is hit
+bind_address = "0.0.0.0:3441" # the address koerier will listen on
+description = "If you don't believe me or don't get it, I don't have time to try to convince you, sorry." # description that will be displayed when the LNURL endpoint is hit
 image_path = "./image.png" # optional: path to an image that will be displayed when the LNURL endpoint is hit
 
 [lnd]
@@ -38,7 +38,7 @@ Then run it:
 ```shell
 koerier -c config.toml
 [2025-09-06T02:49:15Z INFO  koerier] Successfully parsed configuration from `config.toml`
-[2025-09-06T02:49:15Z INFO  koerier] koerier is bound and listening at 0.0.0.0:1337
+[2025-09-06T02:49:15Z INFO  koerier] koerier is bound and listening at 0.0.0.0:3441
 ```
 
 Optionally, use the example [`systemd`](./koerier.service.example) service provided here:
@@ -55,14 +55,14 @@ You can use the provided [Caddyfile](./Caddyfile.example), or adapt it to anothe
 ```Caddyfile
 example.org {
      handle /.well-known/lnurlp* {
-         reverse_proxy 10.10.10.10:1337 {
+         reverse_proxy 10.10.10.10:3441 {
              header_down Access-Control-Allow-Origin "*"
              header_down Access-Control-Allow-Methods "GET, POST, OPTIONS"
              header_down Access-Control-Allow-Headers "Content-Type"
          }
      }
      handle /lnurlp/callback* {
-         reverse_proxy 10.10.10.10:1337 {
+         reverse_proxy 10.10.10.10:3441 {
              header_down Access-Control-Allow-Origin "*"
              header_down Access-Control-Allow-Methods "GET, POST, OPTIONS"
              header_down Access-Control-Allow-Headers "Content-Type"
@@ -85,7 +85,7 @@ designed to make it easy to pay to someone in a non-interactive way, without the
 The part before the `@` specifies the user and the part after the `@` specifies the provider.
 
 Let's say you want to make a payment to the `sats` user, which has an account with the `luisschwab.net` provider.
-The caller can make a `GET` request to `https://luisschwab.net/.well-known/lnurlp/luisschwab`, and receive a response
+The caller can make a `GET` request to `https://luisschwab.net/.well-known/lnurlp/sats`, and receive a response
 in this format:
 
 ```json
@@ -128,13 +128,13 @@ sequenceDiagram
 
     koerier-->>Caller: Callback URL + parameters
 
-    Caller->>koerier: GET Callback URL + amount parameter
+    Caller->>koerier: GET /lnurlp/callback?amount=1000
 
     koerier->>LND: POST /v1/invoices
 
-    LND-->>koerier: Lightning Invoice
+    LND-->>koerier: 1 sat Lightning Invoice
 
-    koerier-->>Caller: Lightning Invoice
+    koerier-->>Caller: 1 sat Lightning Invoice
 
-    Caller-->>LND: Pay Lightning Invoice
+    Caller-->>LND: Pay 1 sat Lightning Invoice
 ```
