@@ -1,0 +1,13 @@
+[Unit]
+Description=Koerier
+After=network-online.target
+
+[Service]
+User=root
+Type=simple
+WorkingDirectory=/root/koerier
+ExecStart=/root/.cargo/bin/koerier -c config.toml
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
