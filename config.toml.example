@@ -1,0 +1,14 @@
+[koerier]
+domain = "https://example.org"
+bind_address = "0.0.0.0:12321"
+description = "How much a dollar really cost?"
+# Optional
+#image_path = "./image.png"
+
+[lnd]
+rest_host = "127.0.0.1:8080"
+tls_cert_path = "~/.lnd/tls.cert"
+invoice_macaroon_path = "~/.lnd/data/chain/bitcoin/mainnet/invoice.macaroon"
+min_invoice_amount = 1         # 1 sat
+max_invoice_amount = 1_000_000 # 1M sats
+invoice_expiry_sec = 3600      # 1 hour
