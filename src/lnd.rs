@@ -18,9 +18,9 @@ pub(crate) struct Lnd {
     /// The full path to the `invoice.macaroon` file. The default path is
     /// `~/.lnd/data/chain/bitcoin/mainnet/invoice.macaroon`.
     pub(crate) invoice_macaroon_path: String,
-    /// The minimum invoice amount, in sats.
+    /// The minimum invoice amount, in satoshis.
     pub(crate) min_invoice_amount: u64,
-    /// The maximum invoice amoun, in sats.
+    /// The maximum invoice amoun, in satoshis.
     pub(crate) max_invoice_amount: u64,
     /// The invoice expiry time, in seconds.
     pub(crate) invoice_expiry_sec: u32,

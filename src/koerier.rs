@@ -30,8 +30,8 @@ pub(crate) const ENDPOINT_CALLBACK: &str = "/lnurlp/callback";
 #[command(about = "A lightning address server for LND")]
 pub(crate) struct Cli {
     #[arg(
-        short = 'c',
         long = "config",
+        short = 'c',
         help = "The path to the TOML configuration file"
     )]
     pub(crate) config: String,
@@ -192,8 +192,24 @@ async fn fetch_invoice(
         }
     };
 
-    // LUD06 spec expects milli satoshis, but LND expects satoshis.
-    let invoice_value = params.amount / 1000;
+    // Check that the requested invoice amount respects the boundaries set by `minSendable` and `maxSendable`.
+    let amount = params.amount;
+    // Convert boundaries from milli-satoshi to satoshi.
+    let min_amount = state.lnd.min_invoice_amount * 1000;
+    let max_amount = state.lnd.max_invoice_amount * 1000;
+    if amount < min_amount as usize || amount > max_amount as usize {
+        error!(
+            "Caller requested an invoice amount that is out of bounds: {amount} ∌ [{min_amount}, {max_amount}]"
+        );
+        let error_response = KoerierErrorResponse {
+            status: "ERROR".to_string(),
+            reason: format!(
+                "The amount must be between {min_amount} and {max_amount} milli-satoshis, you requested {amount}"
+            ),
+        };
+
+        return Ok(serde_json::to_string(&error_response)?);
+    }
 
     // Compute the `description_hash` value, defined as the
     // SHA256 digest of the UTF-8 serialization of the description JSON array.
@@ -203,10 +219,13 @@ async fn fetch_invoice(
     hasher.update(metadata.to_string().as_bytes());
     let description_hash = hasher.finalize().to_vec();
 
-    // Try fetching the invoice from LND, and return it to the caller.
+    // Convert the amount from milli-satoshis to satoshis.
+    let invoice_amount = amount / 1000;
+
+    // Try fetching the invoice from LND and return it to the caller, or return an error.
     let response_json = match state
         .lnd
-        .fetch_invoice(client, invoice_value, description_hash)
+        .fetch_invoice(client, invoice_amount, description_hash)
         .await
     {
         Ok(invoice) => {
