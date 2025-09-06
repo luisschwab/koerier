@@ -71,8 +71,10 @@ impl Lnd {
             .await?;
         let body: serde_json::Value = response.json().await?;
 
+        println!("{:?}", body);
+
         if let Some(payment_request) = body.get("payment_request") {
-            Ok(payment_request.as_str().unwrap_or("").to_string())
+            Ok(payment_request.as_str().unwrap().to_string())
         } else {
             Err(KoerierError::Lnd(
                 "No `payment_request` in response".to_string(),

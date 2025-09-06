@@ -58,10 +58,10 @@ pub(crate) struct CallbackParams {
 }
 
 /// The JSON response from the LNURLP request.
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub(crate) struct LnurlpResponse {
-    /// The URL the wallet must make a request with the `amount` parameter to for the invoice.
-    pub(crate) callback: String,
+    /// The metadata field, which must contain a description and can contain a base64-encoded PNG or JPEG image.
+    pub(crate) metadata: String,
     /// The mandatory "payRequest" tag.
     pub(crate) tag: String,
     /// The minimum invoice amount, in satoshis.
@@ -70,18 +70,27 @@ pub(crate) struct LnurlpResponse {
     /// The maximum invocie amount, in satoshis.
     #[serde(rename = "maxSendable")]
     pub(crate) max_sendable: u64,
-    /// The metadata field, which must contain a description and can contain a base64-encoded PNG or JPEG image.
-    pub(crate) metadata: String,
+    /// The URL the wallet must make a request with the `amount` parameter to for the invoice.
+    pub(crate) callback: String,
 }
 
 /// The JSON response to the callback request.
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub(crate) struct PaymentRequestResponse {
     /// bech32-encoded lightning invoice.
     #[serde(rename = "pr")]
     pub(crate) payment_request: String,
     /// Empty array of route hints (legacy compatibility?)
     pub(crate) routes: Vec<String>,
+}
+
+/// An error response, per LUD06.
+#[derive(Debug, Serialize)]
+pub(crate) struct KoerierErrorResponse {
+    /// The response status. Must be "ERROR".
+    pub(crate) status: String,
+    /// The reason for the error. Arbitrary.
+    pub(crate) reason: String,
 }
 
 /// Response to the caller as per [LUD06-3](https://github.com/lnurl/luds/blob/luds/06.md#pay-to-static-qrnfclink):
@@ -103,8 +112,8 @@ async fn return_params(State(state): State<Arc<AxumState>>) -> Result<String, Ko
         let png_image = image::open(image)?;
 
         let mut png_bytes = Vec::new();
-        let mut cursor = Cursor::new(&mut png_bytes);
 
+        let mut cursor = Cursor::new(&mut png_bytes);
         png_image.write_to(&mut cursor, ImageFormat::Png)?;
 
         let png_base64 = general_purpose::STANDARD.encode(&png_bytes);
@@ -113,11 +122,11 @@ async fn return_params(State(state): State<Arc<AxumState>>) -> Result<String, Ko
     }
 
     let response = LnurlpResponse {
+        metadata: serde_json::to_string(&metadata)?,
         tag: "payRequest".to_string(),
-        callback: format!("{}{}", state.koerier.domain, ENDPOINT_CALLBACK),
         min_sendable: state.lnd.min_invoice_amount,
         max_sendable: state.lnd.max_invoice_amount,
-        metadata: serde_json::to_string(&metadata)?,
+        callback: format!("{}{}", state.koerier.domain, ENDPOINT_CALLBACK),
     };
 
     Ok(serde_json::to_string(&response)?)
@@ -145,19 +154,27 @@ async fn fetch_invoice(
     hasher.update(metadata.to_string().as_bytes());
     let description_hash = hasher.finalize().to_vec();
 
-    // Fetch the invoice from LND.
-    let invoice = state
+    // Try fetching the invoice from LND, and return it to the caller.
+    let response_json = match state
         .lnd
         .fetch_invoice(client, invoice_value, description_hash)
         .await
-        .unwrap();
-
-    // Put the invoice into the JSON structure.
-    let response = PaymentRequestResponse {
-        payment_request: invoice,
-        routes: vec![],
+    {
+        Ok(invoice) => {
+            let success_response = PaymentRequestResponse {
+                payment_request: invoice,
+                routes: vec![],
+            };
+            serde_json::to_string(&success_response)?
+        }
+        Err(_) => {
+            let error_response = KoerierErrorResponse {
+                status: "ERROR".to_string(),
+                reason: "Failed to fetch invoice from LND".to_string(),
+            };
+            serde_json::to_string(&error_response)?
+        }
     };
-    let response_json = serde_json::to_string(&response)?;
 
     Ok(response_json)
 }
