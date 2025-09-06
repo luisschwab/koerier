@@ -75,7 +75,8 @@ pub(crate) struct CallbackParams {
 /// The JSON response from the LNURLP request.
 #[derive(Debug, Serialize)]
 pub(crate) struct LnurlpResponse {
-    /// The metadata field, which must contain a description and can contain a base64-encoded PNG or JPEG image.
+    /// The metadata field, which must contain a description and can contain a base64-encoded PNG
+    /// or JPEG image.
     pub(crate) metadata: String,
     /// The mandatory "payRequest" tag.
     pub(crate) tag: String,

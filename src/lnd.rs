@@ -15,7 +15,8 @@ pub(crate) struct Lnd {
     pub(crate) rest_host: SocketAddr,
     /// The full path to the `tls.cert` file. The default path is `~/.lnd/tls.cert`.
     pub(crate) tls_cert_path: String,
-    /// The full path to the `invoice.macaroon` file. The default path is `~/.lnd/data/chain/bitcoin/mainnet/invoice.macaroon`.
+    /// The full path to the `invoice.macaroon` file. The default path is
+    /// `~/.lnd/data/chain/bitcoin/mainnet/invoice.macaroon`.
     pub(crate) invoice_macaroon_path: String,
     /// The minimum invoice amount, in sats.
     pub(crate) min_invoice_amount: u64,
@@ -45,7 +46,8 @@ impl Lnd {
         Ok(invoice_macaroon)
     }
 
-    /// Make a POST request to the `/v1/invoices` endpoint and fetch an invoice with the defined amount.
+    /// Make a POST request to the `/v1/invoices` endpoint and fetch an invoice with the defined
+    /// amount.
     pub(crate) async fn fetch_invoice(
         &self,
         client: Client,
