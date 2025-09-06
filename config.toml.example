@@ -1,6 +1,6 @@
 [koerier]
 domain = "https://example.org"
-bind_address = "0.0.0.0:12321"
+bind_address = "0.0.0.0:1337"
 description = "How much a dollar really cost?"
 # Optional
 #image_path = "./image.png"

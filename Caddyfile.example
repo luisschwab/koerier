@@ -1,0 +1,17 @@
+example.org {
+    # LNURLP
+     handle /.well-known/lnurlp* {
+         reverse_proxy 10.10.10.10:1337 {
+             header_down Access-Control-Allow-Origin "*"
+             header_down Access-Control-Allow-Methods "GET, POST, OPTIONS"
+             header_down Access-Control-Allow-Headers "Content-Type"
+         }
+     }
+     handle /lnurlp/callback* {
+         reverse_proxy 10.10.10.10:1337 {
+             header_down Access-Control-Allow-Origin "*"
+             header_down Access-Control-Allow-Methods "GET, POST, OPTIONS"
+             header_down Access-Control-Allow-Headers "Content-Type"
+         }
+     }
+}
