@@ -23,12 +23,12 @@ Create a TOML file with these fields:
 domain = "https://example.org" # the domain used on the callback URL
 bind_address = "0.0.0.0:3441" # the address koerier will listen on
 description = "If you don't believe me or don't get it, I don't have time to try to convince you, sorry." # description that will be displayed when the LNURL endpoint is hit
-image_path = "./image.png" # optional: path to an image that will be displayed when the LNURL endpoint is hit
+image_path = "./image.png" # optional: path to a PNG image that will be displayed when the LNURL endpoint is hit
 
 [lnd]
 rest_host = "127.0.0.1:8080" # LND's REST address
-tls_cert_path = "~/.lnd/tls.cert" # path to LND's TLS certificate
-invoice_macaroon_path = "~/.lnd/data/chain/bitcoin/mainnet/invoice.macaroon" # path to LND's invoice macaroon
+tls_cert_path = "/root/.lnd/tls.cert" # path to LND's TLS certificate
+invoice_macaroon_path = "/root/.lnd/data/chain/bitcoin/mainnet/invoice.macaroon" # path to LND's invoice macaroon
 min_invoice_amount = 1 # the minimum allowed invoice amount in sats
 max_invoice_amount = 1_000_000 # the maximum allowed invoice amount in sats
 invoice_expiry_sec = 3600 # the invoice expiry time in seconds
