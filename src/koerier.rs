@@ -1,13 +1,14 @@
 use core::net::SocketAddr;
-use std::{fs, io::Cursor, sync::Arc};
+use std::{fs, io::Cursor, process, sync::Arc};
 
 use axum::{
     Router,
-    extract::{Query, State},
+    extract::{Path, Query, State},
     routing::get,
 };
 use base64::{Engine as _, engine::general_purpose};
 use image::ImageFormat;
+use log::{debug, error, info};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -103,21 +104,39 @@ pub(crate) struct KoerierErrorResponse {
 ///    "tag": "payRequest" // Type of LNURL
 /// }
 /// ```
-async fn return_params(State(state): State<Arc<AxumState>>) -> Result<String, KoerierError> {
+async fn return_params(
+    State(state): State<Arc<AxumState>>,
+    Path(user): Path<String>,
+) -> Result<String, KoerierError> {
+    info!("Received GET /.well-known/lnurlp/{}", user);
+
     let mut metadata: Vec<[String; 2]> =
         vec![["text/plain".to_string(), state.koerier.description.clone()]];
 
     // Push a base64 image to the metadata, if the path is specified.
     if let Some(image) = state.koerier.image_path.clone() {
-        let png_image = image::open(image)?;
+        let image = match image::open(&image) {
+            Ok(png_image) => png_image,
+            Err(e) => {
+                error!("Error opening image at {}: {}", image, e);
+                process::exit(1);
+            }
+        };
 
-        let mut png_bytes = Vec::new();
+        let mut png_buffer = Vec::new();
+        let mut cursor = Cursor::new(&mut png_buffer);
 
-        let mut cursor = Cursor::new(&mut png_bytes);
-        png_image.write_to(&mut cursor, ImageFormat::Png)?;
+        // Convert all image formats to PNG.
+        match image.write_to(&mut cursor, ImageFormat::Png) {
+            Ok(_) => {}
+            Err(e) => {
+                error!("Error writing image to buffer: {}", e);
+                process::exit(1);
+            }
+        }
 
-        let png_base64 = general_purpose::STANDARD.encode(&png_bytes);
-
+        // Encode PNG to base64 and push it to the metadata array.
+        let png_base64 = general_purpose::STANDARD.encode(&png_buffer);
         metadata.push(["image/png;base64".to_string(), png_base64]);
     }
 
@@ -129,6 +148,7 @@ async fn return_params(State(state): State<Arc<AxumState>>) -> Result<String, Ko
         callback: format!("{}{}", state.koerier.domain, ENDPOINT_CALLBACK),
     };
 
+    info!("Responded to GET /.well-known/lnurlp/{}", user);
     Ok(serde_json::to_string(&response)?)
 }
 
@@ -143,7 +163,21 @@ async fn fetch_invoice(
     State(state): State<Arc<AxumState>>,
     Query(params): Query<CallbackParams>,
 ) -> Result<String, KoerierError> {
-    let client = state.lnd.create_client().unwrap();
+    info!(
+        "Received GET {}?amount={}",
+        ENDPOINT_CALLBACK, params.amount
+    );
+
+    // Create a client to make REST requests to LND.
+    let client = match state.lnd.create_client() {
+        Ok(client) => client,
+        Err(e) => {
+            error!("Failed to create reqwest client with LND's certificate: {e}");
+            return Err(e);
+        }
+    };
+
+    // LUD06 spec expects milli satoshis, but LND expects satoshis.
     let invoice_value = params.amount / 1000;
 
     // Compute the `description_hash` value, defined as the
@@ -161,10 +195,16 @@ async fn fetch_invoice(
         .await
     {
         Ok(invoice) => {
+            info!(
+                "Responded to GET {}?amount={}",
+                ENDPOINT_CALLBACK, params.amount
+            );
+            info!("Invoice: {}", invoice);
             let success_response = PaymentRequestResponse {
                 payment_request: invoice,
                 routes: vec![],
             };
+
             serde_json::to_string(&success_response)?
         }
         Err(_) => {
@@ -172,6 +212,11 @@ async fn fetch_invoice(
                 status: "ERROR".to_string(),
                 reason: "Failed to fetch invoice from LND".to_string(),
             };
+            error!("Failed to fetch invoice from LND");
+            error!(
+                "Responded to GET {}?amount={} with an error",
+                ENDPOINT_CALLBACK, params.amount
+            );
             serde_json::to_string(&error_response)?
         }
     };
@@ -180,31 +225,91 @@ async fn fetch_invoice(
 }
 
 /// Read configuration params from `koerier.toml`.
-fn parse_configs() -> (Koerier, Lnd) {
-    let config_str = fs::read_to_string("koerier.toml").unwrap();
-    let config: toml::Value = toml::from_str(&config_str).unwrap();
+fn parse_config() -> (Koerier, Lnd) {
+    let config_str = match fs::read_to_string("koerier.toml") {
+        Ok(config_str) => config_str,
+        Err(_) => {
+            error!("Failed to open `koerier.toml`. Does the file exist?");
+            process::exit(1);
+        }
+    };
+    let config: toml::Value = match toml::from_str(&config_str) {
+        Ok(config) => config,
+        Err(e) => {
+            error!("Failed to parse TOML from `koerier.toml: {e}");
+            process::exit(1);
+        }
+    };
+    let koerier: Koerier = match config["koerier"].clone().try_into() {
+        Ok(koerier) => koerier,
+        Err(e) => {
+            error!("Failed to parse `[koerier]` section from `koerier.toml: {e}");
+            process::exit(1);
+        }
+    };
+    let lnd: Lnd = match config["lnd"].clone().try_into() {
+        Ok(lnd) => lnd,
+        Err(e) => {
+            error!("Failed to parse `[lnd]` section from `koerier.toml: {e}");
+            process::exit(1);
+        }
+    };
 
-    let koerier_config: Koerier = config["koerier"].clone().try_into().unwrap();
-    let lnd_config: Lnd = config["lnd"].clone().try_into().unwrap();
+    info!("Successfully parsed configuration from `koerier.toml`");
 
-    (koerier_config, lnd_config)
+    debug!("");
+    debug!("[kourier]");
+    debug!("domain = {}", koerier.domain);
+    debug!("bind_address = {}", koerier.bind_address);
+    debug!("description = {}", koerier.description);
+    debug!("image_path = {:#?}", koerier.image_path);
+    debug!("[lnd]");
+    debug!("rest_host = {}", lnd.rest_host);
+    debug!("tls_cert_path = {}", lnd.tls_cert_path);
+    debug!("invoice_macaroon_path = {}", lnd.invoice_macaroon_path);
+    debug!("min_invoice_amount = {}", lnd.min_invoice_amount);
+    debug!("max_invoice_amount = {}", lnd.max_invoice_amount);
+    debug!("invoice_expiry_sec = {}", lnd.invoice_expiry_sec);
+    debug!("");
+
+    (koerier, lnd)
 }
 
 #[tokio::main]
 async fn main() {
-    let (koerier, lnd) = parse_configs();
+    env_logger::Builder::from_default_env()
+        .filter_level(log::LevelFilter::Info)
+        .parse_default_env()
+        .init();
 
-    let bind_address = koerier.bind_address;
-    let state = Arc::new(AxumState { koerier, lnd });
+    let (koerier, lnd) = parse_config();
 
-    println!("koerier is running at {bind_address}");
+    let state = Arc::new(AxumState {
+        koerier: koerier.clone(),
+        lnd,
+    });
 
     let router: Router = Router::new()
         .route(ENDPOINT_LNURLP, get(return_params))
         .route(ENDPOINT_CALLBACK, get(fetch_invoice))
         .with_state(state);
 
-    let listener = TcpListener::bind(bind_address).await.unwrap();
+    let listener = match TcpListener::bind(koerier.bind_address).await {
+        Ok(listener) => {
+            info!("koerier is bound and listening at {}", koerier.bind_address);
+            listener
+        }
+        Err(e) => {
+            error!("koerier failed to bind to {}: {}", koerier.bind_address, e);
+            process::exit(1);
+        }
+    };
 
-    axum::serve(listener, router).await.unwrap();
+    let _ = match axum::serve(listener, router).await {
+        Ok(_) => {}
+        Err(e) => {
+            error!("axum failed to serve: {}", e);
+            process::exit(1);
+        }
+    };
 }

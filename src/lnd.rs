@@ -60,9 +60,10 @@ impl Lnd {
             "private": false,
         });
 
-        // Full URL to the invoices endpoint.
+        // Full URL to the invoice endpoint.
         let url_invoices = format!("https://{}/v1/invoices", &self.rest_host);
 
+        // Make the request to LND with the `invoice.macaroon` as a header.
         let response = client
             .post(url_invoices)
             .header("Grpc-Metadata-macaroon", self.hex_encoded_macaroon()?)
@@ -71,13 +72,11 @@ impl Lnd {
             .await?;
         let body: serde_json::Value = response.json().await?;
 
-        println!("{:?}", body);
-
         if let Some(payment_request) = body.get("payment_request") {
             Ok(payment_request.as_str().unwrap().to_string())
         } else {
             Err(KoerierError::Lnd(
-                "No `payment_request` in response".to_string(),
+                "No `payment_request` in LND's response".to_string(),
             ))
         }
     }
