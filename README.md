@@ -74,13 +74,13 @@ example.org {
 ## Architecture
 
 `koerier` is a middleware that implements the Lightning Address, specified in [LUD06](https://github.com/lnurl/luds/blob/luds/06.md).
-It sits between the caller, usually a lightning wallet, and a LND node. The caller
-hits the correct endpoint and receives a lightning invoice.
+It sits between the caller, usually a lightning wallet, and an LND lightning node.
+The caller hits the correct endpoint and receives a lightning invoice.
 
 ## Lightning Address
 
-A lightning address is an internet identifier identical to an email address–_sats@luisschwab.net_ is a lightning address–
-designed to make it easy to pay to someone in a non-interactive way, without the need to ask the person for an invoice.
+A lightning address is an internet identifier identical to an email address–_sats@luisschwab.net_ is a lightning address–designed
+to make it easy to pay to someone in a non-interactive way, without the need to ask the person for an invoice.
 
 The part before the `@` specifies the user and the part after the `@` specifies the provider.
 
@@ -114,6 +114,10 @@ curl "https://luisschwab.net/lnurlp/callback?amount=1000"
 
 Then the caller extracts the `pr` field and pays the invoice normally.
 
+> [!NOTE]
+> Currently, the username field is a catch-all: any username is valid.
+> If you'd like the ability to define a set of valid usernames, open an issue and I'll address it.
+
 ## Sequence Diagram
 
 This is the sequence diagram for the entire workflow, in accordance with [LUD06](https://github.com/lnurl/luds/blob/luds/06.md):
@@ -124,17 +128,17 @@ sequenceDiagram
     participant koerier
     participant LND
 
-    Caller->>koerier: GET /.well-known/lnurlp/sats
+    Caller->>koerier: GET '/.well-known/lnurlp/sats'
 
-    koerier-->>Caller: Callback URL + parameters
+    koerier-->>Caller: return callback '/lnurlp/callback' + parameters
 
-    Caller->>koerier: GET /lnurlp/callback?amount=1000
+    Caller->>koerier: GET '/lnurlp/callback?amount=1000'
 
-    koerier->>LND: POST /v1/invoices
+    koerier->>LND: POST '/v1/invoices' + 1 sat parameter
 
-    LND-->>koerier: 1 sat Lightning Invoice
+    LND-->>koerier: return 'Lightning Invoice (1 sat)'
 
-    koerier-->>Caller: 1 sat Lightning Invoice
+    koerier-->>Caller: return 'Lightning Invoice (1 sat)'
 
-    Caller-->>LND: Pay 1 sat Lightning Invoice
+    Caller-->>LND: Pay 'Lightning Invoice (1 sat)' over the LN
 ```
