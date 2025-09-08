@@ -73,7 +73,7 @@ example.org {
 
 ## Architecture
 
-`koerier` is a middleware that implements the Lightning Address, specified in [LUD06]().
+`koerier` is a middleware that implements the Lightning Address, specified in [LUD06](https://github.com/lnurl/luds/blob/luds/06.md).
 It sits between the caller, usually a lightning wallet, and a LND node. The caller
 hits the correct endpoint and receives a lightning invoice.
 
