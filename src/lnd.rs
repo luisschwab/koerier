@@ -83,3 +83,51 @@ impl Lnd {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_hex_encoded_macaroon() {
+        // Creates temporary file with known contents
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("macaroon");
+        fs::write(&path, vec![0xAB, 0xCD]).unwrap();
+
+        let lnd = Lnd {
+            rest_host: "127.0.0.1:8080".parse().unwrap(),
+            tls_cert_path: "".to_string(),
+            invoice_macaroon_path: path.to_string_lossy().to_string(),
+            min_invoice_amount: 1000,
+            max_invoice_amount: 1000000,
+            invoice_expiry_sec: 3600,
+        };
+
+        let hex = lnd.hex_encoded_macaroon().unwrap();
+        assert_eq!(hex, "abcd");
+    }
+
+    #[test]
+    fn test_request_body_json() {
+        let description_hash = vec![1, 2, 3];
+        let expiry = 120;
+
+        let expected = json!({
+            "value": 42,
+            "description_hash": base64::engine::general_purpose::STANDARD.encode(&description_hash),
+            "expiry": expiry,
+            "private": false,
+        });
+
+        let generated = json!({
+            "value": 42,
+            "description_hash": general_purpose::STANDARD.encode(&description_hash),
+            "expiry": expiry,
+            "private": false,
+        });
+
+        assert_eq!(expected, generated);
+    }
+}
