@@ -1,6 +1,10 @@
 # koerier
 
-_koerier_ is Dutch for courier: someone that collects and delivers messages. _koerier_ collects
+<p align="center">
+  <img src="koerier.png" width="50%" alt="Koerier">
+</p>
+
+_koerier_ is Dutch for courier: someone that collects and delivers messages. `koerier` collects
 lightning invoice requests and delivers lightning invoices.
 
 ## Usage
