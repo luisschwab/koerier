@@ -2,6 +2,12 @@
 name = "koerier"
 version = "0.1.0"
 edition = "2024"
+authors = ["Luis Schwab <luisschwab@protonmail.com"]
+description = "A self-hosted lightning address server for LND"
+license = "MIT"
+repository = "https://github.com/luisschwab/koerier"
+readme = "README.md"
+keywords = ["bitcoin", "lightning", "lnd", "webserver"]
 
 [[bin]]
 name = "koerier"
