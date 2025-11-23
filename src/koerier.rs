@@ -80,10 +80,10 @@ pub(crate) struct LnurlpResponse {
     pub(crate) metadata: String,
     /// The mandatory "payRequest" tag.
     pub(crate) tag: String,
-    /// The minimum invoice amount, in satoshis.
+    /// The minimum invoice amount, in milli-satoshis.
     #[serde(rename = "minSendable")]
     pub(crate) min_sendable: u64,
-    /// The maximum invocie amount, in satoshis.
+    /// The maximum invocie amount, in milli-satoshis.
     #[serde(rename = "maxSendable")]
     pub(crate) max_sendable: u64,
     /// The URL the wallet must make a request with the `amount` parameter to for the invoice.
@@ -155,11 +155,15 @@ async fn return_params(
         metadata.push(["image/png;base64".to_string(), png_base64]);
     }
 
+    // LND returns the amount in sats, but we must return it milli-sats.
+    let min_sendable = state.lnd.min_invoice_amount * 1000;
+    let max_sendable = state.lnd.max_invoice_amount * 1000;
+
     let response = LnurlpResponse {
         metadata: serde_json::to_string(&metadata)?,
         tag: "payRequest".to_string(),
-        min_sendable: state.lnd.min_invoice_amount,
-        max_sendable: state.lnd.max_invoice_amount,
+        min_sendable,
+        max_sendable,
         callback: format!("{}{}", state.koerier.domain, ENDPOINT_CALLBACK),
     };
 
