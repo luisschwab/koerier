@@ -1,5 +1,9 @@
 use core::net::SocketAddr;
-use std::{fs, io::Cursor, process, sync::Arc};
+use std::fs;
+use std::io::Cursor;
+use std::path::PathBuf;
+use std::process;
+use std::sync::Arc;
 
 use axum::{
     Router,
@@ -128,31 +132,12 @@ async fn return_params(
     let mut metadata: Vec<[String; 2]> =
         vec![["text/plain".to_string(), state.koerier.description.clone()]];
 
-    // Push a base64 image to the metadata, if the path is specified.
-    if let Some(image) = state.koerier.image_path.clone() {
-        let image = match image::open(&image) {
-            Ok(png_image) => png_image,
-            Err(e) => {
-                error!("Error opening image at {}: {}", image, e);
-                process::exit(1);
-            }
-        };
+    // Push a base64-encode image to the metadata, if the path is specified.
+    if let Some(image_path) = state.koerier.image_path.clone() {
+        let image_path: PathBuf = PathBuf::from(&image_path);
+        let base64_image: String = get_base64_image(&image_path)?;
 
-        let mut png_buffer = Vec::new();
-        let mut cursor = Cursor::new(&mut png_buffer);
-
-        // Convert all image formats to PNG.
-        match image.write_to(&mut cursor, ImageFormat::Png) {
-            Ok(_) => {}
-            Err(e) => {
-                error!("Error writing image to buffer: {}", e);
-                process::exit(1);
-            }
-        }
-
-        // Encode PNG to base64 and push it to the metadata array.
-        let png_base64 = general_purpose::STANDARD.encode(&png_buffer);
-        metadata.push(["image/png;base64".to_string(), png_base64]);
+        metadata.push(["image/png;base64".to_string(), base64_image]);
     }
 
     // LND returns the amount in sats, but we must return it milli-sats.
@@ -218,7 +203,6 @@ async fn fetch_invoice(
 
     // Compute the `description_hash` value, defined as the
     // SHA256 digest of the UTF-8 serialization of the description JSON array.
-    // TODO(@luisschwab): is this correct?
     let metadata = json!([["text/plain", state.koerier.description]]);
     let mut hasher = Sha256::new();
     hasher.update(metadata.to_string().as_bytes());
@@ -263,8 +247,8 @@ async fn fetch_invoice(
     Ok(response_json)
 }
 
-/// Read configuration params from `koerier.toml`.
-fn parse_config(config_path: String) -> (Koerier, Lnd) {
+/// Read configuration parameters from the TOML configuration file.
+fn parse_config(config_path: String) -> Result<(Koerier, Lnd), KoerierError> {
     let config_str = match fs::read_to_string(&config_path) {
         Ok(config_str) => config_str,
         Err(_) => {
@@ -294,6 +278,15 @@ fn parse_config(config_path: String) -> (Koerier, Lnd) {
         }
     };
 
+    // Try to parse the image to catch any errors on startup.
+    if let Some(image_path) = &koerier.image_path {
+        let image_path: PathBuf = PathBuf::from(&image_path);
+        let _base64_png = match get_base64_image(&image_path) {
+            Ok(_) => (),
+            Err(_) => process::exit(1),
+        };
+    };
+
     info!("Successfully parsed configuration from `{config_path}`");
 
     debug!("");
@@ -311,7 +304,36 @@ fn parse_config(config_path: String) -> (Koerier, Lnd) {
     debug!("invoice_expiry_sec = {}", lnd.invoice_expiry_sec);
     debug!("");
 
-    (koerier, lnd)
+    Ok((koerier, lnd))
+}
+
+/// Get a base64-encoded image [`String`] from a [`PathBuf`].
+fn get_base64_image(image_path: &PathBuf) -> Result<String, KoerierError> {
+    let image = match image::open(&image_path) {
+        Ok(png) => png,
+        Err(e) => {
+            error!(
+                "Failed to open image with path path {}: {}",
+                image_path.display(),
+                e
+            );
+            return Err(KoerierError::Image(e));
+        }
+    };
+
+    let mut png_buffer: Vec<u8> = Vec::new();
+    let mut cursor: Cursor<&mut Vec<u8>> = Cursor::new(&mut png_buffer);
+    match image.write_to(&mut cursor, ImageFormat::Png) {
+        Ok(_) => {}
+        Err(e) => {
+            error!("Error writing image to buffer: {}", e);
+            return Err(KoerierError::Image(e));
+        }
+    }
+
+    let base64_png: String = general_purpose::STANDARD.encode(&png_buffer);
+
+    Ok(base64_png)
 }
 
 #[tokio::main]
@@ -323,7 +345,7 @@ async fn main() {
 
     let args = Cli::parse();
 
-    let (koerier, lnd) = parse_config(args.config);
+    let (koerier, lnd) = parse_config(args.config).unwrap();
 
     let state = Arc::new(AxumState {
         koerier: koerier.clone(),
