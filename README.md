@@ -45,16 +45,16 @@ koerier -c config.toml
 [2025-09-06T02:49:15Z INFO  koerier] koerier is bound and listening at 0.0.0.0:3441
 ```
 
-Optionally, use the example [`systemd`](./koerier.service.example) service provided here:
+Optionally, use the example [`systemd`](example/koerier.service) service provided here:
 ```shell
-cp koerier.service.example /etc/systemd/system/koerier.service
+cp example/koerier.service /etc/systemd/system/koerier.service
 systemctl daemon-reload
 systemctl enable koerier.service
 systemctl start koerier.service
 ```
 
 Since `koerier` does not implement TLS termination, you need to have a webserver acting as a reverse proxy in front of it.
-You can use the provided [Caddyfile](./Caddyfile.example), or adapt it to another webserver implementation:
+You can use the provided [Caddyfile](example/Caddyfile), or adapt it to another webserver implementation:
 
 ```Caddyfile
 example.org {
