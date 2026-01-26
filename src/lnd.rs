@@ -8,6 +8,15 @@ use serde_json::json;
 
 use crate::error::KoerierError;
 
+/// Response from creating an LND invoice.
+#[derive(Clone, Debug)]
+pub(crate) struct InvoiceResponse {
+    /// The bolt11 payment request string.
+    pub(crate) payment_request: String,
+    /// The payment hash in hex format.
+    pub(crate) payment_hash: String,
+}
+
 /// LND configuration parameters.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub(crate) struct Lnd {
@@ -53,7 +62,7 @@ impl Lnd {
         client: Client,
         value: usize,
         description_hash: Vec<u8>,
-    ) -> Result<String, KoerierError> {
+    ) -> Result<InvoiceResponse, KoerierError> {
         // Request body for the `POST /v1/invoices` endpoint.
         let request_body = json!({
             "value": value,
@@ -74,12 +83,75 @@ impl Lnd {
             .await?;
         let body: serde_json::Value = response.json().await?;
 
-        if let Some(payment_request) = body.get("payment_request") {
-            Ok(payment_request.as_str().unwrap().to_string())
-        } else {
-            Err(KoerierError::Lnd(
-                "No `payment_request` in LND's response".to_string(),
-            ))
+        let payment_request = body
+            .get("payment_request")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                KoerierError::Lnd("No `payment_request` in LND's response".to_string())
+            })?;
+
+        // Extract r_hash (base64) and convert to hex
+        let r_hash_base64 = body
+            .get("r_hash")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| KoerierError::Lnd("No `r_hash` in LND's response".to_string()))?;
+
+        let payment_hash_bytes = general_purpose::STANDARD
+            .decode(r_hash_base64)
+            .map_err(|e| KoerierError::Lnd(format!("Failed to decode r_hash: {}", e)))?;
+        let payment_hash = hex::encode(payment_hash_bytes);
+
+        Ok(InvoiceResponse {
+            payment_request: payment_request.to_string(),
+            payment_hash,
+        })
+    }
+
+    /// Check if a specific invoice has been settled.
+    pub(crate) async fn is_invoice_settled(
+        &self,
+        client: &Client,
+        payment_hash: &str,
+    ) -> Result<bool, KoerierError> {
+        let url = format!("https://{}/v1/invoice/{}", &self.rest_host, payment_hash);
+
+        let response = client
+            .get(&url)
+            .header("Grpc-Metadata-macaroon", self.hex_encoded_macaroon()?)
+            .send()
+            .await?;
+
+        let body: serde_json::Value = response.json().await?;
+
+        // Check the state field - "SETTLED" means the invoice has been paid
+        let state = body.get("state").and_then(|s| s.as_str()).unwrap_or("");
+
+        Ok(state == "SETTLED")
+    }
+
+    /// Poll for settled invoices from the pending list.
+    /// Returns a list of payment hashes that have been settled.
+    pub(crate) async fn poll_settled_invoices(
+        &self,
+        client: &Client,
+        payment_hashes: Vec<String>,
+    ) -> Vec<String> {
+        let mut settled = Vec::new();
+
+        for payment_hash in payment_hashes {
+            match self.is_invoice_settled(client, &payment_hash).await {
+                Ok(true) => {
+                    settled.push(payment_hash);
+                }
+                Ok(false) => {
+                    // Not settled yet, continue
+                }
+                Err(e) => {
+                    log::error!("Failed to check invoice status for {}: {}", payment_hash, e);
+                }
+            }
         }
+
+        settled
     }
 }

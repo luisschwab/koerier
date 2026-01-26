@@ -21,9 +21,12 @@ use tokio::net::TcpListener;
 
 use crate::error::KoerierError;
 use crate::lnd::Lnd;
+use crate::zap_storage::ZapStorage;
 
 mod error;
 mod lnd;
+mod zap;
+mod zap_storage;
 
 pub(crate) const ENDPOINT_LNURLP: &str = "/.well-known/lnurlp/{user}";
 pub(crate) const ENDPOINT_CALLBACK: &str = "/lnurlp/callback";
@@ -52,6 +55,9 @@ pub(crate) struct Koerier {
     pub(crate) description: String,
     /// Optional: the path of the image returned in the metadata field of the response.
     pub(crate) image_path: Option<String>,
+    /// Optional: Nostr private key in hex format for signing zap receipts.
+    /// If not provided, zap receipts will not be generated.
+    pub(crate) nostr_privkey: Option<String>,
 }
 
 /// State used in for the Axum router.
@@ -65,15 +71,19 @@ pub(crate) struct AxumState {
     koerier: Koerier,
     /// LND parameters and methods.
     lnd: Lnd,
+    /// Storage for pending zap requests.
+    zap_storage: ZapStorage,
 }
 
-/// URL parameters that need to be read from the callback request: `amount`.
+/// URL parameters that need to be read from the callback request: `amount` and optional `nostr`.
 ///
-/// https://<domain>/<ENDPOINT_CALLBACK>?`amount`=<amount as milli-satoshis>
+/// https://<domain>/<ENDPOINT_CALLBACK>?`amount`=<amount as milli-satoshis>&`nostr`=<zap request event JSON>
 #[derive(Deserialize)]
 pub(crate) struct CallbackParams {
     /// Amount, in milli satoshis.
     pub(crate) amount: usize,
+    /// Optional Nostr zap request event (kind 9734) as URL-encoded JSON.
+    pub(crate) nostr: Option<String>,
 }
 
 /// The JSON response from the LNURLP request.
@@ -92,6 +102,12 @@ pub(crate) struct LnurlpResponse {
     pub(crate) max_sendable: u64,
     /// The URL the wallet must make a request with the `amount` parameter to for the invoice.
     pub(crate) callback: String,
+    /// Whether this server allows Nostr zaps (NIP-57).
+    #[serde(rename = "allowsNostr", skip_serializing_if = "Option::is_none")]
+    pub(crate) allows_nostr: Option<bool>,
+    /// The Nostr public key in hex format for zap receipts (NIP-57).
+    #[serde(rename = "nostrPubkey", skip_serializing_if = "Option::is_none")]
+    pub(crate) nostr_pubkey: Option<String>,
 }
 
 /// The JSON response to the callback request.
@@ -144,12 +160,31 @@ async fn return_params(
     let min_sendable = state.lnd.min_invoice_amount * 1000;
     let max_sendable = state.lnd.max_invoice_amount * 1000;
 
+    // If nostr_privkey is configured, enable zap support and derive pubkey
+    let (allows_nostr, nostr_pubkey) = if let Some(ref privkey_hex) = state.koerier.nostr_privkey {
+        match nostr_sdk::prelude::SecretKey::from_hex(privkey_hex) {
+            Ok(secret_key) => {
+                let keys = nostr_sdk::prelude::Keys::new(secret_key);
+                let pubkey = keys.public_key().to_hex();
+                (Some(true), Some(pubkey))
+            }
+            Err(e) => {
+                error!("Failed to parse nostr_privkey: {}", e);
+                (None, None)
+            }
+        }
+    } else {
+        (None, None)
+    };
+
     let response = LnurlpResponse {
         metadata: serde_json::to_string(&metadata)?,
         tag: "payRequest".to_string(),
         min_sendable,
         max_sendable,
         callback: format!("{}{}", state.koerier.domain, ENDPOINT_CALLBACK),
+        allows_nostr,
+        nostr_pubkey,
     };
 
     info!("Responded to GET /.well-known/lnurlp/{}", user);
@@ -163,13 +198,20 @@ async fn return_params(
 ///     routes: [] // an empty array
 /// }
 /// ```
+///
+/// Also supports NIP-57 Zap requests when the `nostr` parameter is provided.
 async fn fetch_invoice(
     State(state): State<Arc<AxumState>>,
     Query(params): Query<CallbackParams>,
 ) -> Result<String, KoerierError> {
+    let zap_request_info = if params.nostr.is_some() {
+        " (zap request)"
+    } else {
+        ""
+    };
     info!(
-        "Received GET {}?amount={}",
-        ENDPOINT_CALLBACK, params.amount
+        "Received GET {}?amount={}{}",
+        ENDPOINT_CALLBACK, params.amount, zap_request_info
     );
 
     // Create a client to make REST requests to LND.
@@ -201,11 +243,37 @@ async fn fetch_invoice(
         return Ok(serde_json::to_string(&error_response)?);
     }
 
-    // Compute the `description_hash` value, defined as the
-    // SHA256 digest of the UTF-8 serialization of the description JSON array.
-    let metadata = json!([["text/plain", state.koerier.description]]);
+    // If a nostr parameter is provided, validate the zap request
+    let validated_zap_request = if let Some(ref nostr_json) = params.nostr {
+        match zap::validate_zap_request(nostr_json, params.amount) {
+            Ok(event) => {
+                info!("Zap request validated successfully");
+                Some(event)
+            }
+            Err(e) => {
+                error!("Zap request validation failed: {}", e);
+                let error_response = KoerierErrorResponse {
+                    status: "ERROR".to_string(),
+                    reason: format!("Invalid zap request: {}", e),
+                };
+                return Ok(serde_json::to_string(&error_response)?);
+            }
+        }
+    } else {
+        None
+    };
+
+    // Compute the `description_hash` value.
+    // For zap requests, use the zap request JSON as per NIP-57.
+    // Otherwise, use the metadata JSON array as per LUD06.
+    let description_string = if let Some(ref nostr_json) = params.nostr {
+        nostr_json.clone()
+    } else {
+        json!([["text/plain", state.koerier.description]]).to_string()
+    };
+
     let mut hasher = Sha256::new();
-    hasher.update(metadata.to_string().as_bytes());
+    hasher.update(description_string.as_bytes());
     let description_hash = hasher.finalize().to_vec();
 
     // Convert the amount from milli-satoshis to satoshis.
@@ -217,14 +285,38 @@ async fn fetch_invoice(
         .fetch_invoice(client, invoice_amount, description_hash)
         .await
     {
-        Ok(invoice) => {
+        Ok(invoice_response) => {
             info!(
                 "Responded to GET {}?amount={}",
                 ENDPOINT_CALLBACK, params.amount
             );
-            info!("Invoice: {}", invoice);
+            info!("Invoice: {}", invoice_response.payment_request);
+            info!("Payment hash: {}", invoice_response.payment_hash);
+
+            // Store zap request for automatic receipt generation when payment is received
+            if let Some(zap_request) = validated_zap_request {
+                if state.koerier.nostr_privkey.is_some() {
+                    info!("Storing zap request for automatic receipt generation");
+                    state
+                        .zap_storage
+                        .store(
+                            invoice_response.payment_hash.clone(),
+                            zap_request,
+                            invoice_response.payment_request.clone(),
+                        )
+                        .await;
+                    info!(
+                        "Zap request stored. Receipt will be generated automatically upon payment."
+                    );
+                } else {
+                    error!(
+                        "Zap request received but no nostr_privkey configured. Cannot generate zap receipt."
+                    );
+                }
+            }
+
             let success_response = PaymentRequestResponse {
-                payment_request: invoice,
+                payment_request: invoice_response.payment_request,
                 routes: vec![],
             };
 
@@ -295,6 +387,14 @@ fn parse_config(config_path: String) -> Result<(Koerier, Lnd), KoerierError> {
     debug!("bind_address = {}", koerier.bind_address);
     debug!("description = {}", koerier.description);
     debug!("image_path = {:#?}", koerier.image_path);
+    debug!(
+        "nostr_privkey = {}",
+        if koerier.nostr_privkey.is_some() {
+            "configured (hidden)"
+        } else {
+            "not configured"
+        }
+    );
     debug!("[lnd]");
     debug!("rest_host = {}", lnd.rest_host);
     debug!("tls_cert_path = {}", lnd.tls_cert_path);
@@ -336,6 +436,161 @@ fn get_base64_image(image_path: &PathBuf) -> Result<String, KoerierError> {
     Ok(base64_png)
 }
 
+/// Background task that monitors LND for invoice settlements and generates zap receipts.
+async fn monitor_invoices_and_generate_zaps(
+    lnd: Lnd,
+    zap_storage: ZapStorage,
+    nostr_privkey: Option<String>,
+) {
+    use tokio::time::{Duration, sleep};
+
+    // Only run if nostr_privkey is configured
+    let nostr_privkey = match nostr_privkey {
+        Some(key) => key,
+        None => {
+            info!("Nostr private key not configured, zap receipt generation disabled");
+            return;
+        }
+    };
+
+    // Parse the nostr keys
+    let keys = match nostr_sdk::prelude::SecretKey::from_hex(&nostr_privkey) {
+        Ok(secret_key) => nostr_sdk::prelude::Keys::new(secret_key),
+        Err(e) => {
+            error!(
+                "Failed to parse nostr_privkey, zap receipts disabled: {}",
+                e
+            );
+            return;
+        }
+    };
+
+    info!("Starting invoice monitoring for automatic zap receipt generation");
+
+    // Create LND client
+    let client = match lnd.create_client() {
+        Ok(client) => client,
+        Err(e) => {
+            error!("Failed to create LND client for invoice monitoring: {}", e);
+            return;
+        }
+    };
+
+    info!("Polling for invoice settlements every 5 seconds");
+
+    // Poll for settled invoices every 5 seconds
+    loop {
+        sleep(Duration::from_secs(5)).await;
+
+        // Get list of pending payment hashes
+        let pending_count = zap_storage.len().await;
+        if pending_count == 0 {
+            continue;
+        }
+
+        debug!("Checking {} pending zap invoices", pending_count);
+
+        // We need to get all pending payment hashes
+        // Since we can't iterate the HashMap directly, we'll check each as we poll
+        // For now, let's use a simple approach: store payment hashes separately
+        // Actually, let me check invoices by iterating through the internal storage
+        // For simplicity, let's poll LND's recent invoices endpoint instead
+
+        // Get recent invoices from LND
+        let url = format!(
+            "https://{}/v1/invoices?num_max_invoices=100&reversed=true",
+            lnd.rest_host
+        );
+        let response = match client
+            .get(&url)
+            .header(
+                "Grpc-Metadata-macaroon",
+                match lnd.hex_encoded_macaroon() {
+                    Ok(m) => m,
+                    Err(e) => {
+                        error!("Failed to encode macaroon: {}", e);
+                        continue;
+                    }
+                },
+            )
+            .send()
+            .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                error!("Failed to fetch recent invoices: {}", e);
+                continue;
+            }
+        };
+
+        let body: serde_json::Value = match response.json().await {
+            Ok(b) => b,
+            Err(e) => {
+                error!("Failed to parse invoices response: {}", e);
+                continue;
+            }
+        };
+
+        // Check each invoice
+        if let Some(invoices) = body.get("invoices").and_then(|i| i.as_array()) {
+            for invoice in invoices {
+                let state = invoice.get("state").and_then(|s| s.as_str());
+                if state == Some("SETTLED") {
+                    // Extract payment hash
+                    if let Some(r_hash) = invoice.get("r_hash").and_then(|h| h.as_str()) {
+                        if let Ok(hash_bytes) =
+                            base64::engine::general_purpose::STANDARD.decode(r_hash)
+                        {
+                            let payment_hash = hex::encode(hash_bytes);
+
+                            // Check if we have a pending zap for this payment hash
+                            if let Some(pending_zap) = zap_storage.take(&payment_hash).await {
+                                info!("Invoice settled: {}", payment_hash);
+                                info!(
+                                    "Found zap request for settled invoice, generating zap receipt"
+                                );
+
+                                // Generate zap receipt
+                                match zap::create_zap_receipt(
+                                    &pending_zap.zap_request,
+                                    &pending_zap.invoice,
+                                    &keys,
+                                )
+                                .await
+                                {
+                                    Ok(zap_receipt) => {
+                                        info!("Zap receipt created: {}", zap_receipt.id);
+
+                                        // Extract relays from the zap request
+                                        let relays = zap::extract_relays(&pending_zap.zap_request);
+                                        info!("Publishing zap receipt to {} relays", relays.len());
+
+                                        // Publish the zap receipt
+                                        match zap::publish_zap_receipt(zap_receipt, relays).await {
+                                            Ok(_) => {
+                                                info!(
+                                                    "Zap receipt published successfully for payment_hash: {}",
+                                                    payment_hash
+                                                );
+                                            }
+                                            Err(e) => {
+                                                error!("Failed to publish zap receipt: {}", e);
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        error!("Failed to create zap receipt: {}", e);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() {
     env_logger::Builder::from_default_env()
@@ -347,9 +602,25 @@ async fn main() {
 
     let (koerier, lnd) = parse_config(args.config).unwrap();
 
+    // Create zap storage
+    let zap_storage = ZapStorage::new();
+
+    // Start invoice monitoring task in background if nostr_privkey is configured
+    if koerier.nostr_privkey.is_some() {
+        let lnd_clone = lnd.clone();
+        let zap_storage_clone = zap_storage.clone();
+        let nostr_privkey_clone = koerier.nostr_privkey.clone();
+
+        tokio::spawn(async move {
+            monitor_invoices_and_generate_zaps(lnd_clone, zap_storage_clone, nostr_privkey_clone)
+                .await;
+        });
+    }
+
     let state = Arc::new(AxumState {
         koerier: koerier.clone(),
         lnd,
+        zap_storage,
     });
 
     let router: Router = Router::new()

@@ -25,6 +25,14 @@ pub(crate) enum KoerierError {
     /// Error serializing into JSON.
     #[error("Error serializing into JSON: {0}")]
     Json(#[from] serde_json::Error),
+
+    /// Error validating zap request.
+    #[error("Error validating zap request: {0}")]
+    ZapValidation(String),
+
+    /// Error creating or publishing zap receipt.
+    #[error("Error with zap receipt: {0}")]
+    ZapReceipt(String),
 }
 
 impl IntoResponse for KoerierError {
