@@ -16,7 +16,7 @@ path = "src/koerier.rs"
 [dependencies]
 axum = "0.8.8"
 base64 = "0.22.1"
-clap = { version = "4.5.60", features = ["derive"] }
+clap = { version = "4.6.0", features = ["derive"] }
 env_logger = "0.11.9"
 hex = "0.4.3"
 image = "0.25.9"
