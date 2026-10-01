@@ -30,7 +30,7 @@ tracing = { version = "=0.1.44" }
 tracing-subscriber = { version = "=0.3.23", features = ["env-filter"] }
 sha2 = { version = "=0.11.0" }
 tokio = { version = "=1.53.0", features = ["rt-multi-thread", "net", "macros"] }
-toml = { version = "=1.1.3" }
+toml = { version = "=1.1.4" }
 # Pinned transitive deps:
 anyhow = { version = "=1.0.104", default-features = false } # blame: rand@0.10.2 -> getrandom@0.4.2 -> wasip3@0.4.0+wasi-0.3.0-rc-2026-01-06 -> wit-bindgen@0.51.0 -> wit-bindgen-rust-macro@0.51.0 -> anyhow@1.0.102 (RUSTSEC-2026-0190)
 bumpalo = { version = "=3.20.3", default-features = false } # blame: reqwest@0.13.4 -> wasm-bindgen@0.2.100 -> wasm-bindgen-macro@0.2.100 -> wasm-bindgen-macro-support@0.2.100 -> wasm-bindgen-backend@0.2.100 -> bumpalo@3.2.1 (RUSTSEC-2022-0078)
