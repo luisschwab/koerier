@@ -6,8 +6,8 @@
 
 <p>
     <a href="https://crates.io/crates/koerier"><img src="https://img.shields.io/crates/v/koerier.svg"/></a>
-    <a href="https://docs.rs/koerier"><img src="https://img.shields.io/badge/docs.rs-koerier-yellow"/></a>
-    <a href="https://blog.rust-lang.org/2025/02/20/Rust-1.85.0/"><img src="https://img.shields.io/badge/rustc-1.85.0%2B-orange.svg?label=MSRV"/></a>
+    <a href="https://docs.rs/koerier"><img src="https://img.shields.io/badge/docs.rs-koerier-blue"/></a>
+    <a href="https://blog.rust-lang.org/2026/10/01/Rust-1.99.0/"><img src="https://img.shields.io/badge/rustc-1.99.0%2B-orange.svg?label=MSRV"/></a>
     <a href="https://github.com/luisschwab/koerier/blob/master/LICENSE"><img src="https://img.shields.io/badge/License-MIT%2FApache--2.0-red.svg"/></a>
     <a href="https://github.com/luisschwab/koerier/actions/workflows/rust.yml"><img src="https://github.com/luisschwab/koerier/actions/workflows/rust.yml/badge.svg"></a>
 </p>
@@ -45,6 +45,11 @@ min_invoice_amount = 1 # the minimum allowed invoice amount in sats
 max_invoice_amount = 1_000_000 # the maximum allowed invoice amount in sats
 invoice_expiry_sec = 3600 # the invoice expiry time in seconds
 ```
+
+The LND connection trusts the exact server certificate in `tls_cert_path` and
+verifies TLS handshake signatures. Certificate pinning replaces CA-chain, hostname,
+and expiry checks, allowing LND's self-signed certificates marked as CAs. If LND
+rotates its certificate, this file must contain the new certificate.
 
 Then run it:
 ```shell
