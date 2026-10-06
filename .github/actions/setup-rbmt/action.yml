@@ -11,10 +11,10 @@ runs:
               RBMT_VERSION=$(grep -A 1 '^\[package\.metadata\.rbmt\]$' Cargo.toml | grep -E -o '[0-9]+([.][0-9]+)*')
               cargo install cargo-rbmt --version "$RBMT_VERSION" --locked
 
-        - name: Install Rust Toolchains
+        - name: Install Toolchains
           shell: bash
           run: cargo rbmt toolchains
 
-        - name: Install cargo-rbmt Tools
+        - name: Install Tools
           shell: bash
           run: cargo rbmt tools

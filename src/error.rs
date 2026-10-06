@@ -6,6 +6,7 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::response::Response;
 
+/// Errors from file access, LND requests, image processing, and JSON serialization.
 #[derive(Debug)]
 pub(crate) enum KoerierError {
     /// Error reading file from the file system.

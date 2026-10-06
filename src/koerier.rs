@@ -1,3 +1,9 @@
+//! A self-hosted Lightning Address server that generates invoices through LND's REST API.
+//!
+//! Exposes LNURL-pay endpoints so Lightning wallets can request invoices using an
+//! email-style address such as `sats@example.org`. Payment metadata, invoice amount
+//! limits, and invoice expiry are configured through a TOML file.
+
 use core::net::SocketAddr;
 use std::fs;
 use std::io::Cursor;
@@ -28,10 +34,14 @@ use tracing_subscriber::EnvFilter;
 use crate::error::KoerierError;
 use crate::lnd::Lnd;
 
+/// Application errors and their HTTP responses.
 mod error;
+/// LND configuration and REST client operations.
 mod lnd;
 
+/// LNURL-pay discovery endpoint for a Lightning Address user.
 pub(crate) const ENDPOINT_LNURLP: &str = "/.well-known/lnurlp/{user}";
+/// Callback endpoint that returns an invoice for the requested amount.
 pub(crate) const ENDPOINT_CALLBACK: &str = "/lnurlp/callback";
 
 /// TOML configuration file path CLI argument.
@@ -39,6 +49,7 @@ pub(crate) const ENDPOINT_CALLBACK: &str = "/lnurlp/callback";
 #[command(name = "koerier")]
 #[command(about = "A lightning address server for LND")]
 pub(crate) struct Cli {
+    /// Path to the TOML configuration file.
     #[arg(long = "config", short = 'c', help = "The path to the TOML configuration file")]
     pub(crate) config: String,
 }
@@ -205,42 +216,36 @@ async fn fetch_invoice(
     let invoice_amount = amount / 1000;
 
     // Try fetching the invoice from LND and return it to the caller, or return an error.
-    let response_json = match state.lnd.fetch_invoice(client, invoice_amount, description_hash).await {
-        Ok(invoice) => {
-            info!("Responded to GET {}?amount={}", ENDPOINT_CALLBACK, params.amount);
-            info!("Invoice: {}", invoice);
-            let success_response = PaymentRequestResponse {
-                payment_request: invoice,
-                routes: vec![],
-            };
+    let response_json = if let Ok(invoice) = state.lnd.fetch_invoice(client, invoice_amount, description_hash).await {
+        info!("Responded to GET {}?amount={}", ENDPOINT_CALLBACK, params.amount);
+        info!("Invoice: {}", invoice);
+        let success_response = PaymentRequestResponse {
+            payment_request: invoice,
+            routes: vec![],
+        };
 
-            serde_json::to_string(&success_response)?
-        }
-        Err(_) => {
-            let error_response = KoerierErrorResponse {
-                status: "ERROR".to_string(),
-                reason: "Failed to fetch invoice from LND".to_string(),
-            };
-            error!("Failed to fetch invoice from LND");
-            error!(
-                "Responded to GET {}?amount={} with an error",
-                ENDPOINT_CALLBACK, params.amount
-            );
-            serde_json::to_string(&error_response)?
-        }
+        serde_json::to_string(&success_response)?
+    } else {
+        let error_response = KoerierErrorResponse {
+            status: "ERROR".to_string(),
+            reason: "Failed to fetch invoice from LND".to_string(),
+        };
+        error!("Failed to fetch invoice from LND");
+        error!(
+            "Responded to GET {}?amount={} with an error",
+            ENDPOINT_CALLBACK, params.amount
+        );
+        serde_json::to_string(&error_response)?
     };
 
     Ok(response_json)
 }
 
 /// Read configuration parameters from the TOML configuration file.
-fn parse_config(config_path: String) -> Result<(Koerier, Lnd), KoerierError> {
-    let config_str = match fs::read_to_string(&config_path) {
-        Ok(config_str) => config_str,
-        Err(_) => {
-            error!("Failed to open `{config_path}`. Does the file exist?");
-            process::exit(1);
-        }
+fn parse_config(config_path: &str) -> (Koerier, Lnd) {
+    let Ok(config_str) = fs::read_to_string(config_path) else {
+        error!("Failed to open `{config_path}`. Does the file exist?");
+        process::exit(1);
     };
     let config: toml::Value = match toml::from_str(&config_str) {
         Ok(config) => config,
@@ -290,7 +295,7 @@ fn parse_config(config_path: String) -> Result<(Koerier, Lnd), KoerierError> {
     debug!("invoice_expiry_sec = {}", lnd.invoice_expiry_sec);
     debug!("");
 
-    Ok((koerier, lnd))
+    (koerier, lnd)
 }
 
 /// Get a base64-encoded image [`String`] from a [`PathBuf`].
@@ -306,7 +311,7 @@ fn get_base64_image(image_path: &PathBuf) -> Result<String, KoerierError> {
     let mut png_buffer: Vec<u8> = Vec::new();
     let mut cursor: Cursor<&mut Vec<u8>> = Cursor::new(&mut png_buffer);
     match image.write_to(&mut cursor, ImageFormat::Png) {
-        Ok(_) => {}
+        Ok(()) => {}
         Err(e) => {
             error!("Error writing image to buffer: {}", e);
             return Err(KoerierError::Image(e));
@@ -324,9 +329,13 @@ async fn main() {
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
         .init();
 
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("ERR: Failed to install rustls' ring crypto provider");
+
     let args = Cli::parse();
 
-    let (koerier, lnd) = parse_config(args.config).unwrap();
+    let (koerier, lnd) = parse_config(&args.config);
 
     let state = Arc::new(AxumState {
         koerier: koerier.clone(),
@@ -350,7 +359,7 @@ async fn main() {
     };
 
     match axum::serve(listener, router).await {
-        Ok(_) => {}
+        Ok(()) => {}
         Err(e) => {
             error!("axum failed to serve: {}", e);
             process::exit(1);

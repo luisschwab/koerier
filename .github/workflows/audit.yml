@@ -15,7 +15,7 @@ env:
 
 jobs:
     cargo-audit:
-        name: Cargo Audit - ${{ matrix.name }}
+        name: Cargo Audit - ${{ matrix.lockfile }}
         runs-on: ubuntu-latest
         permissions:
             contents: read
@@ -25,12 +25,10 @@ jobs:
             fail-fast: false
             matrix:
                 include:
-                    - name: Fresh Lockfile
-                      lockfile: Cargo.lock
-                    - name: Recent Lockfile
-                      lockfile: Cargo-recent.lock
-                    - name: Minimal Lockfile
-                      lockfile: Cargo-minimal.lock
+                    - lockfile: Cargo.lock
+                    - lockfile: Cargo-maximum.lock
+                    - lockfile: Cargo-recent.lock
+                    - lockfile: Cargo-minimal.lock
 
         steps:
             - name: Checkout Repository
@@ -42,7 +40,7 @@ jobs:
               uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
 
             - name: Setup cargo-rbmt
-              uses: ./.github/actions/setup-rbmt
+              uses: $/.github/actions/setup-rbmt
 
             - name: Generate Fresh Lockfile
               if: ${{ matrix.lockfile == 'Cargo.lock' }}
@@ -72,7 +70,7 @@ jobs:
               uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
 
             - name: Setup cargo-rbmt
-              uses: ./.github/actions/setup-rbmt
+              uses: $/.github/actions/setup-rbmt
 
             - name: Run Zizmor
               shell: bash

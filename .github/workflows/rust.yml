@@ -38,7 +38,7 @@ jobs:
               uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
 
             - name: Setup cargo-rbmt
-              uses: ./.github/actions/setup-rbmt
+              uses: $/.github/actions/setup-rbmt
 
             - name: Check ${{ matrix.task }}
               run: cargo rbmt ${{ matrix.task }}
@@ -72,7 +72,7 @@ jobs:
               uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
 
             - name: Setup cargo-rbmt
-              uses: ./.github/actions/setup-rbmt
+              uses: $/.github/actions/setup-rbmt
 
             - name: Run Tests - ${{ matrix.name }}
               run: cargo rbmt test --toolchain ${{ matrix.toolchain }} --lockfile ${{ matrix.lockfile }}

@@ -21,6 +21,8 @@ _default:
 audit:
     @echo "Auditing Cargo.lock"
     cargo audit -D warnings --file Cargo.lock
+    @echo "\nAuditing Cargo-maximum.lock"
+    cargo audit -D warnings --file Cargo-maximum.lock
     @echo "\nAuditing Cargo-recent.lock"
     cargo audit -D warnings --file Cargo-recent.lock
     @echo "\nAuditing Cargo-minimal.lock"
@@ -50,7 +52,7 @@ fmt:
 
 [doc: "Regenerate Lockfiles"]
 lock:
-    cargo rbmt lock
+    cargo rbmt lock --lockfiles minimal,recent,maximum
 
 [doc: "Run Tests"]
 test:
@@ -59,8 +61,8 @@ test:
 [doc: "Run Tests with Lockfile and Toolchain Combos"]
 test-all:
     cargo rbmt test  --toolchain msrv --lockfile minimal
-    cargo rbmt test  --toolchain stable --lockfile minimal
     cargo rbmt test  --toolchain stable --lockfile recent
+    cargo rbmt test  --toolchain stable --lockfile maximum
 
 [doc: "Run Zizmor"]
 zizmor:
