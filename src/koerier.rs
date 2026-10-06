@@ -38,6 +38,7 @@ use crate::lnd::Lnd;
 mod error;
 /// LND configuration and REST client operations.
 mod lnd;
+mod tls;
 
 /// LNURL-pay discovery endpoint for a Lightning Address user.
 pub(crate) const ENDPOINT_LNURLP: &str = "/.well-known/lnurlp/{user}";
@@ -288,7 +289,7 @@ fn parse_config(config_path: &str) -> (Koerier, Lnd) {
     debug!("image_path = {:#?}", koerier.image_path);
     debug!("[lnd]");
     debug!("rest_host = {}", lnd.rest_host);
-    debug!("tls_cert_path = {}", lnd.tls_cert_path);
+    debug!("tls_cert_path = {}", lnd.tls_cert_path.display());
     debug!("invoice_macaroon_path = {}", lnd.invoice_macaroon_path);
     debug!("min_invoice_amount = {}", lnd.min_invoice_amount);
     debug!("max_invoice_amount = {}", lnd.max_invoice_amount);

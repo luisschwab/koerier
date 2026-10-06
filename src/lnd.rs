@@ -1,15 +1,18 @@
 use core::net::SocketAddr;
 use std::fs;
+use std::path::PathBuf;
 
 use base64::Engine;
 use base64::engine::general_purpose;
-use reqwest::Certificate;
 use reqwest::Client;
+use rustls::pki_types::CertificateDer;
+use rustls::pki_types::pem::PemObject;
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::json;
 
 use crate::error::KoerierError;
+use crate::tls::pinned_client_config;
 
 /// LND configuration parameters.
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -17,7 +20,8 @@ pub(crate) struct Lnd {
     /// The REST host where LND is listening. The default host is `127.0.0.1:8080`.
     pub(crate) rest_host: SocketAddr,
     /// The full path to the `tls.cert` file. The default path is `~/.lnd/tls.cert`.
-    pub(crate) tls_cert_path: String,
+    /// The server must present this exact certificate, including when it is self-signed.
+    pub(crate) tls_cert_path: PathBuf,
     /// The full path to the `invoice.macaroon` file. The default path is
     /// `~/.lnd/data/chain/bitcoin/mainnet/invoice.macaroon`.
     pub(crate) invoice_macaroon_path: String,
@@ -34,9 +38,13 @@ impl Lnd {
     /// Create an async client that makes requests to LND's REST interface.
     pub(crate) fn create_client(&self) -> Result<Client, KoerierError> {
         let cert: Vec<u8> = fs::read(&self.tls_cert_path)?;
-        let cert: Certificate = Certificate::from_pem(&cert)?;
+        let cert = CertificateDer::from_pem_slice(&cert)?;
+        let tls = pinned_client_config(cert)?;
 
-        let client: Client = Client::builder().add_root_certificate(cert).build()?;
+        let client: Client = Client::builder()
+            .tls_backend_preconfigured(tls)
+            .https_only(true)
+            .build()?;
 
         Ok(client)
     }
