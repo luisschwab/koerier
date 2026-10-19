@@ -20,6 +20,7 @@ _default:
 [doc: "Run cargo-audit across all lockfiles"]
 audit:
     @echo "Auditing Cargo.lock"
+    cargo generate-lockfile
     cargo audit -D warnings --file Cargo.lock
     @echo "\nAuditing Cargo-maximum.lock"
     cargo audit -D warnings --file Cargo-maximum.lock
