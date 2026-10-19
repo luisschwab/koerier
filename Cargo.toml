@@ -26,7 +26,7 @@ clap = { version = "4.6.7", features = ["derive"] }
 hex = { version = "0.4.3" }
 image = { version = "0.25.10", default-features = false, features = ["png"] }
 reqwest = { version = "0.13.5", default-features = false, features = ["json", "rustls-no-provider"] }
-rustls = { version = "0.23.45", default-features = false, features = ["ring"] }
+rustls = { version = "0.23.46", default-features = false, features = ["ring"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = { version = "1.0.151" }
 tracing = { version = "0.1.44" }
@@ -39,7 +39,7 @@ bytes = { version = "1.12.1", default-features = false } # blame: axum@0.8.9 -> 
 is_terminal_polyfill = { version = "1.70.2", default-features = false } # blame: clap@4.6.7 -> clap_builder@4.6.7 -> anstream@1.0.0 -> is_terminal_polyfill@1.48.0 -> is-terminal@0.4.2 -> rustix@0.36.4 -> errno@0.2.8 -> errno-dragonfly@0.1.1 -> gcc@0.3.3 (RUSTSEC-2025-0121)
 lazy_static = { version = "1.5.1" } # blame: tracing-subscriber@0.3.23 -> sharded-slab@0.1.4 -> lazy_static@1.0.0 (missing __lazy_static_internal macro)
 num-traits = { version = "0.2.19", default-features = false } # blame: image@0.25.10 -> moxcms@0.8.0 -> pxfm@0.1.1 -> num-traits@0.2.0 (missing MulAdd trait)
-ring = { version = "0.17.14", default-features = false } # blame: rustls@0.23.45 -> ring@0.17.0 (RUSTSEC-2025-0009)
+ring = { version = "0.17.14", default-features = false } # blame: rustls@0.23.46 -> ring@0.17.0 (RUSTSEC-2025-0009)
 url = { version = "2.5.8", default-features = false } # blame: reqwest@0.13.5 -> url@2.4.0 -> idna@0.4.0 (RUSTSEC-2024-0421)
 [target.'cfg(any())'.dependencies]
 bumpalo = { version = "3.20.3", default-features = false } # blame: reqwest@0.13.5 -> wasm-bindgen@0.2.100 -> wasm-bindgen-macro@0.2.100 -> wasm-bindgen-macro-support@0.2.100 -> wasm-bindgen-backend@0.2.100 -> bumpalo@3.2.1 (RUSTSEC-2022-0078)
